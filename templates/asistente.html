@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block titulo %}Asistente{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <h1>Asistente</h1>
+    <p class="sub">Pregunta en español. Las cifras salen de las mismas funciones que el tablero; abajo de cada respuesta puedes ver qué consultó.</p>
+  </div>
+  {% if demo %}<span class="chip">Hasta <b>{{ limite }}</b> preguntas por día</span>{% endif %}
+</div>
+
+<section class="card chat">
+  <div class="mensajes" id="mensajes">
+    <div class="vacio" id="vacio">
+      <h2>¿Qué quieres saber de la flota?</h2>
+      {% if asistente_activo %}
+      <p>Algunas ideas para empezar:</p>
+      {% else %}
+      <p class="aviso-error">El asistente no está configurado en este servidor (falta la clave de OpenRouter). El resto del demo funciona igual.</p>
+      {% endif %}
+      <div class="sugerencias">
+        <button type="button">¿Qué unidades nos están haciendo perder dinero y por qué?</button>
+        <button type="button">¿Qué clientes debo llamar esta semana por cobranza?</button>
+        <button type="button">¿Conviene seguir comprando pickups o vans?</button>
+        <button type="button">Cotiza una Hilux a 36 meses con 30% de residual y servicios incluidos</button>
+        <button type="button">¿Cuántos contratos vencen en los próximos 6 meses y cuánta renta representan?</button>
+      </div>
+    </div>
+  </div>
+  <form class="entrada" id="forma">
+    <textarea id="pregunta" rows="1" placeholder="Escribe tu pregunta" maxlength="1000" aria-label="Pregunta" {{ 'disabled' if not asistente_activo }}></textarea>
+    <button class="btn" id="enviar" {{ 'disabled' if not asistente_activo }}>Preguntar</button>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<script>
+(() => {
+  const lista = document.getElementById("mensajes");
+  const forma = document.getElementById("forma");
+  const caja = document.getElementById("pregunta");
+  const boton = document.getElementById("enviar");
+  const historial = [];
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  const md = t => window.marked && window.DOMPurify ? DOMPurify.sanitize(marked.parse(t)) : "<p>" + esc(t).replace(/\n/g, "<br>") + "</p>";
+
+  function agregar(clase, html) {
+    document.getElementById("vacio")?.remove();
+    const d = document.createElement("div");
+    d.className = "msg " + clase;
+    d.innerHTML = html;
+    lista.append(d);
+    lista.scrollTop = lista.scrollHeight;
+    return d;
+  }
+
+  function trazar(pasos, modelo, segundos) {
+    if (!pasos.length) return `<p class="pasos">Respondió sin consultar datos · ${esc(modelo)} · ${segundos} s</p>`;
+    const items = pasos.map(p => {
+      const args = typeof p.argumentos === "string" ? p.argumentos : JSON.stringify(p.argumentos);
+      const sql = p.argumentos && p.argumentos.sql;
+      return `<li class="${p.error ? "err" : ""}"><code>${esc(p.herramienta)}</code> ${sql ? "<code>" + esc(sql) + "</code>" : (args && args !== "{}" ? "<code>" + esc(args) + "</code>" : "")}${p.error ? " · " + esc(p.error) : ""}</li>`;
+    }).join("");
+    return `<details class="pasos"><summary>${pasos.length} consulta${pasos.length > 1 ? "s" : ""} a los datos · ${esc(modelo)} · ${segundos} s</summary><ul>${items}</ul></details>`;
+  }
+
+  async function enviar(texto) {
+    texto = texto.trim();
+    if (!texto || boton.disabled) return;
+    agregar("yo", esc(texto));
+    caja.value = ""; caja.style.height = "";
+    boton.disabled = true;
+    const espera = agregar("ia", '<span class="escribiendo" aria-label="Pensando"><i></i><i></i><i></i></span>');
+    try {
+      const r = await fetch("/api/preguntar", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({pregunta: texto, historial: historial.slice(-6)})});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : "No se pudo obtener respuesta.");
+      espera.innerHTML = `<div class="cuerpo">${md(j.respuesta)}</div>` + trazar(j.pasos, j.modelo, j.segundos);
+      historial.push({role: "user", content: texto}, {role: "assistant", content: j.respuesta});
+    } catch (e) {
+      espera.innerHTML = `<p class="aviso-error">${esc(e.message)}</p>`;
+    } finally {
+      boton.disabled = false;
+      caja.focus();
+      lista.scrollTop = lista.scrollHeight;
+    }
+  }
+
+  forma.addEventListener("submit", e => { e.preventDefault(); enviar(caja.value); });
+  caja.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(caja.value); } });
+  caja.addEventListener("input", () => { caja.style.height = "auto"; caja.style.height = Math.min(caja.scrollHeight, 160) + "px"; });
+  lista.addEventListener("click", e => { if (e.target.matches(".sugerencias button")) enviar(e.target.textContent); });
+})();
+</script>
+{% endblock %}

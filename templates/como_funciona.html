@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block titulo %}Cómo funciona{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <h1>Cómo funciona</h1>
+    <p class="sub">Qué hace cada pieza, dónde entra la IA y cómo se verifica que las cifras sean correctas.</p>
+  </div>
+</div>
+
+<article class="card prosa">
+  <p>Flotilla responde tres preguntas de una arrendadora de vehículos: qué unidades y clientes dejan dinero, quién nos debe y cuánto, y qué renta cobrar en una operación nueva.
+  Todo sale de una sola capa de cálculo en Python, probada contra casos hechos a mano.
+  La web, el asistente y el servidor MCP solo la llaman.</p>
+
+  <svg class="diagrama" viewBox="0 0 720 210" role="img" aria-label="Arquitectura: web, asistente y MCP usan las mismas herramientas sobre la capa de cálculo y SQLite">
+    <defs><marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--muted)"/></marker></defs>
+    <g font-size="12.5" font-family="var(--font)">
+      <rect x="10" y="10" width="200" height="44" rx="6" fill="var(--surface-2)" stroke="var(--border-strong)"/><text x="110" y="37" text-anchor="middle" fill="var(--text)">Tablero, cartera, cotizador</text>
+      <rect x="260" y="10" width="200" height="44" rx="6" fill="var(--accent-soft)" stroke="var(--accent)"/><text x="360" y="30" text-anchor="middle" fill="var(--text)">Asistente web</text><text x="360" y="45" text-anchor="middle" fill="var(--muted)" font-size="11">OpenRouter · tool use</text>
+      <rect x="510" y="10" width="200" height="44" rx="6" fill="var(--accent-soft)" stroke="var(--accent)"/><text x="610" y="30" text-anchor="middle" fill="var(--text)">Servidor MCP</text><text x="610" y="45" text-anchor="middle" fill="var(--muted)" font-size="11">Claude Code / Desktop</text>
+      <rect x="260" y="84" width="450" height="40" rx="6" fill="var(--surface)" stroke="var(--border-strong)"/><text x="485" y="108" text-anchor="middle" fill="var(--text)">herramientas.py: resumen, rentabilidad, cartera, cotizar, SQL de solo lectura</text>
+      <rect x="10" y="150" width="700" height="44" rx="6" fill="var(--surface)" stroke="var(--border-strong)"/><text x="360" y="170" text-anchor="middle" fill="var(--text)">analitica.py + finanzas.py (cálculo probado)  ·  SQLite</text><text x="360" y="185" text-anchor="middle" fill="var(--muted)" font-size="11">el SQL del modelo pasa por un authorizer que solo permite leer</text>
+      <path d="M110 54V146" stroke="var(--muted)" marker-end="url(#f)"/>
+      <path d="M360 54V80" stroke="var(--muted)" marker-end="url(#f)"/>
+      <path d="M610 54V80" stroke="var(--muted)" marker-end="url(#f)"/>
+      <path d="M485 124V146" stroke="var(--muted)" marker-end="url(#f)"/>
+    </g>
+  </svg>
+
+  <h2>La regla del asistente: el modelo no hace cuentas</h2>
+  <p>El modelo elige qué herramienta llamar y redacta la respuesta, pero cada cifra viene del resultado de una herramienta.
+  Debajo de cada respuesta se ven las consultas que hizo, para poder auditarla.
+  El modelo se configura con una variable de entorno: por defecto uno económico que maneja bien herramientas, y se puede cambiar a Claude sin tocar código.</p>
+
+  <h2>SQL escrito por un modelo, tratado como entrada no confiable</h2>
+  <p>Cuando ninguna herramienta cubre la pregunta, el modelo puede escribir SQL.
+  No se filtra con expresiones regulares: SQLite mismo autoriza cada acción al compilar la sentencia y solo permite leer.
+  Además, la conexión es de solo lectura, hay tope de filas y tope de tiempo.
+  Hay pruebas para <code>DELETE</code>, <code>DROP</code>, <code>PRAGMA</code>, <code>ATTACH</code>, <code>load_extension</code>, varias sentencias y un CTE recursivo infinito.</p>
+
+  <h2>Cómo se calcula la rentabilidad</h2>
+  <ul>
+    <li><b>Ingreso devengado</b>: rentas cuyo vencimiento cae en el periodo, se hayan cobrado o no.</li>
+    <li><b>Gastos</b>: mantenimiento, seguro, GPS, tenencia, verificación y siniestros.</li>
+    <li><b>Depreciación</b>: línea recta del costo al valor residual en 60 meses.</li>
+    <li><b>Costo de fondeo</b>: valor en libros de cada mes por la tasa de fondeo.</li>
+    <li><b>Resultado por venta</b>: precio de venta menos valor en libros.</li>
+  </ul>
+  <p>La renta del cotizador cumple que el valor presente de las rentas más el del residual es igual al precio, y la TIR del flujo regresa la tasa pactada; ambas cosas están en las pruebas.</p>
+
+  <h2>Hecho con Claude Code</h2>
+  <p>El repositorio incluye lo que usé para construirlo y lo que deja listo para seguir trabajando con IA:</p>
+  <ul>
+    <li><code>.mcp.json</code> registra el servidor MCP, así Claude Code consulta la flota directamente.</li>
+    <li>La skill <code>analisis-flota</code> fija cómo contestar preguntas de negocio: qué herramienta usar, periodo, formato y recomendación.</li>
+    <li>El subagente <code>auditor-cifras</code> revisa un análisis antes de entregarlo y recalcula cada cifra con una consulta independiente.</li>
+    <li><code>CLAUDE.md</code> con las reglas del proyecto: nada de cálculos fuera de <code>analitica.py</code>, prueba primero y datos ficticios.</li>
+  </ul>
+
+  <h2>Errores que encontraron las pruebas</h2>
+  <ul>
+    <li>Gastos y contratos fechados después del corte en el mes en curso: el día se elegía al azar sin tope.</li>
+    <li>La primera versión daba un margen de -40% en toda la flota: la renta solo cubría la parte financiera y no la cuota de servicios que se cobra en arrendamiento puro.</li>
+    <li>Un cliente acumulaba 65 rentas sin pagar con contratos vigentes: se cambió la simulación para rescindir a los 3 a 5 meses, como haría una arrendadora real.</li>
+  </ul>
+  <p>Los datos son ficticios y se regeneran cada noche con la fecha del día como corte. Las fórmulas son las de un arrendamiento puro estándar; los supuestos de costo están en <code>finanzas.py</code>.</p>
+</article>
+{% endblock %}

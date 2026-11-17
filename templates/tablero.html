@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block titulo %}Tablero{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <h1>Tablero</h1>
+    <p class="sub">Rentabilidad de los últimos 12 meses cerrados ({{ ventana.desde | fecha }} al {{ ventana.hasta | fecha }}), sin IVA.</p>
+  </div>
+  <span class="chip">Corte <b>{{ r.corte | fecha }}</b></span>
+</div>
+
+<section class="grid kpis">
+  <div class="card kpi">
+    <div class="etq">Utilización</div>
+    <div class="val">{{ r.utilizacion | pct }}</div>
+    <div class="det">{{ r.unidades.get('arrendada', 0) }} de {{ r.unidades_en_flota }} unidades arrendadas</div>
+  </div>
+  <div class="card kpi">
+    <div class="etq">Renta mensual vigente</div>
+    <div class="val">{{ r.renta_mensual_vigente | miles }}</div>
+    <div class="det">{{ r.contratos_vigentes }} contratos · {{ r.contratos_por_vencer_90d }} vencen en 90 días</div>
+  </div>
+  <div class="card kpi">
+    <div class="etq">Utilidad económica 12 meses</div>
+    <div class="val {{ 'neg' if r.utilidad_12m < 0 }}">{{ r.utilidad_12m | miles }}</div>
+    <div class="det">Margen {{ r.margen_12m | pct }} sobre {{ r.ingreso_12m | miles }} de ingreso</div>
+  </div>
+  <div class="card kpi">
+    <div class="etq">Cartera vencida</div>
+    <div class="val {{ 'neg' if r.cartera_vs_facturado_12m > 0.03 }}">{{ r.cartera_vencida | miles }}</div>
+    <div class="det">{{ r.cartera_vs_facturado_12m | pct }} de lo facturado en 12 meses</div>
+  </div>
+</section>
+
+<section class="card" style="margin-bottom:16px">
+  <header>
+    <h2>Ingreso contra costo, por mes</h2>
+    <div class="leyenda">
+      <span><i style="background:var(--accent)"></i>Ingreso</span>
+      <span><i style="background:var(--c1)"></i>Gastos</span>
+      <span><i style="background:var(--c2)"></i>Depreciación</span>
+      <span><i style="background:var(--c3)"></i>Fondeo</span>
+      <span><i style="background:var(--pos);border-radius:50%"></i>Utilidad</span>
+    </div>
+  </header>
+  {% set W = 960 %}{% set H = 230 %}{% set top = 12 %}{% set base = 190 %}{% set izq = 46 %}
+  {% set n = serie | length %}{% set col = (W - izq - 8) / n %}{% set bw = col * 0.3 %}
+  {% set escala = (base - top) / tope %}
+  <div class="grafica-wrap" id="grafica"><svg class="grafica" viewBox="0 0 {{ W }} {{ H }}" role="img" aria-label="Ingreso y costos mensuales de los últimos {{ n }} meses">
+    {% for k in range(0, ((tope / paso) | round | int) + 1) %}
+      {% set v = paso * k %}{% set y = base - v * escala %}
+      <line class="eje" x1="{{ izq }}" x2="{{ W - 8 }}" y1="{{ y }}" y2="{{ y }}"/>
+      <text x="{{ izq - 6 }}" y="{{ y + 3.5 }}" text-anchor="end">{{ v | miles }}</text>
+    {% endfor %}
+    {% for s in serie %}
+      {% set x0 = izq + col * loop.index0 + col * 0.17 %}
+      <rect x="{{ x0 }}" y="{{ base - s.ingreso * escala }}" width="{{ bw }}" height="{{ s.ingreso * escala }}" fill="var(--accent)" rx="1.5"><title>{{ s.mes | mes }}: ingreso {{ s.ingreso | dinero }}</title></rect>
+      {% set x1 = x0 + bw + 2 %}
+      {% set y1 = base - s.gastos * escala %}
+      <rect x="{{ x1 }}" y="{{ y1 }}" width="{{ bw }}" height="{{ s.gastos * escala }}" fill="var(--c1)"><title>Gastos {{ s.gastos | dinero }}</title></rect>
+      {% set y2 = y1 - s.depreciacion * escala %}
+      <rect x="{{ x1 }}" y="{{ y2 }}" width="{{ bw }}" height="{{ s.depreciacion * escala }}" fill="var(--c2)"><title>Depreciación {{ s.depreciacion | dinero }}</title></rect>
+      {% set y3 = y2 - s.costo_fondeo * escala %}
+      <rect x="{{ x1 }}" y="{{ y3 }}" width="{{ bw }}" height="{{ s.costo_fondeo * escala }}" fill="var(--c3)"><title>Fondeo {{ s.costo_fondeo | dinero }}</title></rect>
+      {% if loop.index0 % 2 == (n - 1) % 2 %}
+      <text x="{{ x0 + bw + 1 }}" y="{{ base + 16 }}" text-anchor="middle">{{ s.mes | mes }}</text>
+      {% endif %}
+    {% endfor %}
+    <line class="linea-cero" x1="{{ izq }}" x2="{{ W - 8 }}" y1="{{ base }}" y2="{{ base }}"/>
+    {% set ns = namespace(d="") %}
+    {% for s in serie %}
+      {% set cx = izq + col * loop.index0 + col * 0.17 + bw + 1 %}
+      {% set ns.d = ns.d ~ ("M" if loop.first else "L") ~ cx ~ "," ~ (base - s.utilidad * escala) %}
+    {% endfor %}
+    <path d="{{ ns.d }}" fill="none" stroke="var(--pos)" stroke-width="1.6" stroke-dasharray="3 3"/>
+    {% for s in serie %}
+      {% set cx = izq + col * loop.index0 + col * 0.17 + bw + 1 %}
+      <circle cx="{{ cx }}" cy="{{ base - s.utilidad * escala }}" r="3.2" fill="{{ 'var(--pos)' if s.utilidad >= 0 else 'var(--neg)' }}" stroke="var(--surface)" stroke-width="1.2"><title>{{ s.mes | mes }}: utilidad {{ s.utilidad | dinero }}</title></circle>
+    {% endfor %}
+  </svg></div>
+</section>
+
+<section class="grid dos" style="margin-bottom:16px">
+  <div class="card">
+    <header><h2>Rentabilidad por categoría</h2><a class="sub" href="/unidades">Ver unidades</a></header>
+    <div class="tabla-wrap"><table>
+      <thead><tr><th>Categoría</th><th class="num">Unidades</th><th class="num">Ingreso</th><th class="num">Utilidad</th><th class="num">Margen</th><th class="ocultar-movil" style="width:24%"></th></tr></thead>
+      <tbody>
+      {% set mx = categorias.grupos | map(attribute='margen') | map('abs') | max %}
+      {% for g in categorias.grupos %}
+        <tr>
+          <td>{{ g.grupo }}</td>
+          <td class="num">{{ g.unidades }}</td>
+          <td class="num">{{ g.ingreso | miles }}</td>
+          <td class="num {{ 'neg' if g.utilidad < 0 }}">{{ g.utilidad | miles }}</td>
+          <td class="num {{ 'neg' if g.margen < 0 }}">{{ g.margen | pct }}</td>
+          <td class="ocultar-movil"><div class="barra"><i class="{{ 'p' if g.margen >= 0 else 'n' }}" style="width:{{ (g.margen | abs) / mx * 50 if mx else 0 }}%"></i></div></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <h2 style="margin:22px 0 10px">Modelos con peor margen</h2>
+    <div class="tabla-wrap"><table>
+      <tbody>
+      {% for g in modelos %}
+        <tr>
+          <td>{{ g.grupo }}<span class="linea2">{{ g.unidades }} unidad{{ 'es' if g.unidades != 1 }} · ingreso {{ g.ingreso | miles }}</span></td>
+          <td class="num {{ 'neg' if g.utilidad < 0 }}">{{ g.utilidad | dinero }}</td>
+          <td class="num {{ 'neg' if g.margen < 0 }}" style="width:80px">{{ g.margen | pct }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <header><h2>Cartera vencida</h2><a class="sub" href="/cartera">Ver detalle</a></header>
+    {% set colores = {'1-30': 'var(--r1)', '31-60': 'var(--r2)', '61-90': 'var(--r3)', '90+': 'var(--r4)'} %}
+    <div class="aging" role="img" aria-label="Cartera vencida por antigüedad">
+      {% for rango, monto in cartera.por_rango.items() %}{% if monto > 0 %}
+        <span style="width:{{ monto / cartera.total * 100 }}%;background:{{ colores[rango] }}" title="{{ rango }} días: {{ monto | dinero }}"></span>
+      {% endif %}{% endfor %}
+    </div>
+    <div class="leyenda" style="margin-bottom:14px">
+      {% for rango, monto in cartera.por_rango.items() %}
+        <span><i style="background:{{ colores[rango] }}"></i>{{ rango }} días<b>{{ monto | miles }}</b></span>
+      {% endfor %}
+    </div>
+    <div class="tabla-wrap"><table>
+      <tbody>
+      {% for c in cartera.clientes[:5] %}
+        <tr>
+          <td>{{ c.cliente }}<span class="linea2">{{ c.rentas }} rentas · hasta {{ c.dias_max }} días{% if c.rescindidos %} · <span class="neg">contrato rescindido</span>{% endif %}</span></td>
+          <td class="num">{{ c.total | dinero }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="card">
+  <header><h2>Unidades que más dinero pierden</h2><span class="sub">Utilidad económica en 12 meses</span></header>
+  <div class="tabla-wrap"><table>
+    <thead><tr><th>Unidad</th><th class="ocultar-movil">Estado</th><th class="num">Ingreso</th><th class="num ocultar-movil">Gastos</th><th class="num ocultar-movil">Siniestros</th><th class="num ocultar-movil">Dep. + fondeo</th><th class="num">Utilidad</th></tr></thead>
+    <tbody>
+    {% for u in peores %}
+      <tr>
+        <td><span class="placa">{{ u.placa }}</span><span class="linea2">{{ u.vehiculo }}{% if u.cliente %} · {{ u.cliente }}{% endif %}</span></td>
+        <td class="ocultar-movil"><span class="estado {{ u.estado }}">{{ u.estado }}</span></td>
+        <td class="num">{{ u.ingreso | dinero }}</td>
+        <td class="num ocultar-movil">{{ u.gastos | dinero }}</td>
+        <td class="num ocultar-movil">{{ u.siniestros | dinero if u.siniestros else '-' }}</td>
+        <td class="num ocultar-movil">{{ (u.depreciacion + u.costo_fondeo) | dinero }}</td>
+        <td class="num neg">{{ u.utilidad | dinero }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  // En pantallas angostas la gráfica se desplaza: mostrar primero los meses recientes.
+  const g = document.getElementById("grafica");
+  if (g) g.scrollLeft = g.scrollWidth;
+</script>
+{% endblock %}

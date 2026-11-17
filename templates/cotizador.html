@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block titulo %}Cotizador{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <h1>Cotizador de arrendamiento puro</h1>
+    <p class="sub">Renta anticipada. La parte financiera recupera el precio menos el valor presente del residual a la tasa pactada.</p>
+  </div>
+</div>
+
+<section class="grid dos">
+  <form class="card" id="forma" autocomplete="off">
+    <header><h2>Datos de la operación</h2></header>
+    <div class="form-grid">
+      <div class="campo ancho">
+        <label for="catalogo">Vehículo del catálogo</label>
+        <select id="catalogo">
+          <option value="">Personalizado</option>
+          {% for c in catalogo %}<option value="{{ c.precio }}" data-mtto="{{ c.mtto }}" {{ 'selected' if loop.index0 == 9 }}>{{ c.vehiculo }} · {{ c.categoria }} · {{ c.precio | dinero }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="precio">Precio sin IVA (MXN)</label>
+        <input id="precio" name="precio" type="number" min="1" step="100" required>
+      </div>
+      <div class="campo">
+        <label for="plazo">Plazo (meses)</label>
+        <select id="plazo" name="plazo_meses">{% for p in [12, 24, 36, 48, 60] %}<option {{ 'selected' if p == 36 }}>{{ p }}</option>{% endfor %}</select>
+      </div>
+      <div class="campo">
+        <label for="tasa">Tasa anual (%)</label>
+        <input id="tasa" name="tasa" type="number" min="0" max="100" step="0.1" value="18.5" required>
+      </div>
+      <div class="campo">
+        <label for="residual">Residual (% del precio)</label>
+        <input id="residual" name="residual" type="number" min="0" max="95" step="1" value="35" required>
+      </div>
+      <div class="campo">
+        <label for="comision">Comisión por apertura (%)</label>
+        <input id="comision" name="comision" type="number" min="0" max="10" step="0.5" value="1.5">
+      </div>
+      <div class="campo">
+        <label for="mtto">Mantenimiento por servicio (MXN)</label>
+        <input id="mtto" name="mtto" type="number" min="0" step="100">
+        <span class="ayuda">Vacío = renta sin servicios incluidos.</span>
+      </div>
+    </div>
+  </form>
+
+  <div class="card" id="res" aria-live="polite">
+    <header><h2>Renta mensual</h2><span class="sub" id="res-sub"></span></header>
+    <div class="resultado-grande" id="r-total">-</div>
+    <div class="sub" id="r-sin">&nbsp;</div>
+    <div class="desglose">
+      <span>Parte financiera</span><span class="num" id="r-fin">-</span>
+      <span>Cuota de servicios</span><span class="num" id="r-serv">-</span>
+      <span class="total">Renta sin IVA</span><span class="num total" id="r-siniva">-</span>
+      <span>IVA 16%</span><span class="num" id="r-iva">-</span>
+      <span class="total">Renta con IVA</span><span class="num total" id="r-coniva">-</span>
+    </div>
+    <div class="desglose" style="margin-top:18px">
+      <span>Valor residual al final</span><span class="num" id="r-residual">-</span>
+      <span>Comisión por apertura</span><span class="num" id="r-comision">-</span>
+      <span>Total de rentas sin IVA</span><span class="num" id="r-totrentas">-</span>
+      <span>TIR del flujo financiero</span><span class="num" id="r-tir">-</span>
+    </div>
+    <p class="aviso-error" id="r-error" hidden></p>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const mx = (x, d = 2) => (x < 0 ? "-" : "") + "$" + Math.abs(x).toLocaleString("es-MX", {minimumFractionDigits: d, maximumFractionDigits: d});
+  const cat = $("catalogo");
+  function desdeCatalogo() {
+    const o = cat.selectedOptions[0];
+    if (!o.value) return;
+    $("precio").value = o.value;
+    $("mtto").value = o.dataset.mtto;
+  }
+  let t, pedido = 0;
+  async function calcular() {
+    const yo = ++pedido;
+    const cuerpo = {
+      precio: parseFloat($("precio").value), plazo_meses: parseInt($("plazo").value),
+      tasa_anual: parseFloat($("tasa").value) / 100, residual_pct: parseFloat($("residual").value) / 100,
+      comision_apertura_pct: (parseFloat($("comision").value) || 0) / 100,
+      mantenimiento_por_servicio: $("mtto").value === "" ? null : parseFloat($("mtto").value),
+    };
+    const err = $("r-error");
+    if (Object.values(cuerpo).some(v => typeof v === "number" && Number.isNaN(v))) return;
+    const r = await fetch("/api/cotizar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cuerpo)});
+    if (yo !== pedido) return;
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      err.textContent = typeof j.detail === "string" ? j.detail : "Revisa los datos: algún valor está fuera de rango.";
+      err.hidden = false;
+      $("res").style.opacity = 0.55;
+      return;
+    }
+    err.hidden = true; $("res").style.opacity = 1;
+    const c = await r.json();
+    $("r-total").textContent = mx(c.renta_con_iva);
+    $("r-sin").textContent = "con IVA · " + mx(c.renta_sin_iva) + " sin IVA";
+    $("res-sub").textContent = c.plazo_meses + " meses al " + (c.tasa_anual * 100).toFixed(1) + "%";
+    $("r-fin").textContent = mx(c.renta_financiera);
+    $("r-serv").textContent = c.cuota_servicios ? mx(c.cuota_servicios) : "No incluida";
+    $("r-siniva").textContent = mx(c.renta_sin_iva);
+    $("r-iva").textContent = mx(c.iva_renta);
+    $("r-coniva").textContent = mx(c.renta_con_iva);
+    $("r-residual").textContent = mx(c.residual, 0) + " (" + (c.residual_pct * 100).toFixed(0) + "%)";
+    $("r-comision").textContent = mx(c.comision_apertura);
+    $("r-totrentas").textContent = mx(c.total_rentas_sin_iva, 0);
+    $("r-tir").textContent = c.tir_anual_nominal == null ? "-" : (c.tir_anual_nominal * 100).toFixed(2) + "% anual";
+  }
+  const programar = () => { clearTimeout(t); t = setTimeout(calcular, 180); };
+  cat.addEventListener("change", () => { desdeCatalogo(); calcular(); });
+  $("forma").addEventListener("input", e => { if (e.target !== cat) { if (e.target.id === "precio" || e.target.id === "mtto") cat.value = ""; programar(); } });
+  $("forma").addEventListener("submit", e => { e.preventDefault(); calcular(); });
+  desdeCatalogo(); calcular();
+})();
+</script>
+{% endblock %}

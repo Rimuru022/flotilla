@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block titulo %}Unidades{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <h1>Unidades</h1>
+    <p class="sub">Utilidad económica del {{ ventana.desde | fecha }} al {{ ventana.hasta | fecha }}: ingreso devengado + venta - gastos - depreciación - costo de fondeo.</p>
+  </div>
+  <span class="chip"><b>{{ filas | length }}</b> unidades con tenencia en el periodo</span>
+</div>
+
+<section class="grid dos" style="margin-bottom:16px">
+  <div class="card">
+    <header><h2>Por modelo</h2><span class="sub">Los 6 peores</span></header>
+    <div class="tabla-wrap"><table>
+      <thead><tr><th>Vehículo</th><th class="num">Unid.</th><th class="num">Utilidad</th><th class="num">Margen</th></tr></thead>
+      <tbody>{% for g in (vehiculos | sort(attribute='utilidad'))[:6] %}
+        <tr><td>{{ g.grupo }}</td><td class="num">{{ g.unidades }}</td><td class="num {{ 'neg' if g.utilidad < 0 }}">{{ g.utilidad | dinero }}</td><td class="num {{ 'neg' if g.margen < 0 }}">{{ g.margen | pct }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+  <div class="card">
+    <header><h2>Por cliente</h2><span class="sub">Los 6 más rentables</span></header>
+    <div class="tabla-wrap"><table>
+      <thead><tr><th>Cliente</th><th class="num">Unid.</th><th class="num">Utilidad</th></tr></thead>
+      <tbody>{% for g in clientes[:6] %}
+        <tr><td>{{ g.grupo }}</td><td class="num">{{ g.unidades }}</td><td class="num">{{ g.utilidad | dinero }}</td></tr>
+      {% endfor %}</tbody>
+    </table></div>
+  </div>
+</section>
+
+<section class="card">
+  <header>
+    <h2>Todas las unidades</h2>
+    <div class="campo" style="flex-direction:row;align-items:center;gap:8px">
+      <label for="filtro" class="ocultar-movil">Buscar</label>
+      <input id="filtro" type="search" placeholder="Placa, modelo o cliente" style="width:min(220px, 100%)">
+    </div>
+  </header>
+  <div class="tabla-wrap"><table id="tabla">
+    <thead><tr>
+      <th class="ordenable" data-tipo="txt">Unidad</th>
+      <th class="ordenable ocultar-movil" data-tipo="txt">Estado</th>
+      <th class="ordenable num ocultar-movil" data-tipo="num">Meses</th>
+      <th class="ordenable num" data-tipo="num">Ingreso</th>
+      <th class="ordenable num ocultar-movil" data-tipo="num">Gastos</th>
+      <th class="ordenable num ocultar-movil" data-tipo="num">Depreciación</th>
+      <th class="ordenable num ocultar-movil" data-tipo="num">Fondeo</th>
+      <th class="ordenable num" data-tipo="num" aria-sort="ascending">Utilidad</th>
+      <th class="ordenable num ocultar-movil" data-tipo="num">Rend. anual</th>
+    </tr></thead>
+    <tbody>
+    {% for u in filas %}
+      <tr data-buscar="{{ (u.placa ~ ' ' ~ u.vehiculo ~ ' ' ~ (u.cliente or '')) | lower }}">
+        <td data-v="{{ u.placa }}"><span class="placa">{{ u.placa }}</span><span class="linea2">{{ u.vehiculo }}<span class="ocultar-movil">{% if u.cliente %} · {{ u.cliente }}{% endif %}</span></span></td>
+        <td class="ocultar-movil" data-v="{{ u.estado }}"><span class="estado {{ u.estado }}">{{ u.estado }}</span></td>
+        <td class="num ocultar-movil" data-v="{{ u.meses }}">{{ u.meses }}</td>
+        <td class="num" data-v="{{ u.ingreso }}">{{ u.ingreso | dinero }}</td>
+        <td class="num ocultar-movil" data-v="{{ u.gastos }}">{{ u.gastos | dinero }}</td>
+        <td class="num ocultar-movil" data-v="{{ u.depreciacion }}">{{ u.depreciacion | dinero }}</td>
+        <td class="num ocultar-movil" data-v="{{ u.costo_fondeo }}">{{ u.costo_fondeo | dinero }}</td>
+        <td class="num {{ 'neg' if u.utilidad < 0 }}" data-v="{{ u.utilidad }}">{{ u.utilidad | dinero }}{% if u.resultado_venta %}<span class="linea2">incluye venta {{ u.resultado_venta | dinero }}</span>{% endif %}</td>
+        <td class="num ocultar-movil {{ 'neg' if u.rendimiento_anual < 0 }}" data-v="{{ u.rendimiento_anual }}">{{ u.rendimiento_anual | pct }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const tabla = document.getElementById("tabla");
+  const cuerpo = tabla.tBodies[0];
+  const ths = [...tabla.tHead.rows[0].cells];
+  ths.forEach((th, i) => th.addEventListener("click", () => {
+    const asc = th.getAttribute("aria-sort") !== "ascending";
+    ths.forEach(t => t.removeAttribute("aria-sort"));
+    th.setAttribute("aria-sort", asc ? "ascending" : "descending");
+    const num = th.dataset.tipo === "num";
+    const filas = [...cuerpo.rows].sort((a, b) => {
+      const x = a.cells[i].dataset.v, y = b.cells[i].dataset.v;
+      const r = num ? parseFloat(x) - parseFloat(y) : x.localeCompare(y, "es");
+      return asc ? r : -r;
+    });
+    cuerpo.append(...filas);
+  }));
+  document.getElementById("filtro").addEventListener("input", e => {
+    const q = e.target.value.trim().toLowerCase();
+    for (const f of cuerpo.rows) f.hidden = q && !f.dataset.buscar.includes(q);
+  });
+})();
+</script>
+{% endblock %}

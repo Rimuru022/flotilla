@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block titulo %}Cartera{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <h1>Cartera vencida</h1>
+    <p class="sub">Rentas con saldo y vencimiento anterior al {{ cartera.corte | fecha }}, por cliente. Montos sin IVA.</p>
+  </div>
+  <span class="chip">Total <b>{{ cartera.total | dinero }}</b></span>
+</div>
+
+{% set colores = {'1-30': 'var(--r1)', '31-60': 'var(--r2)', '61-90': 'var(--r3)', '90+': 'var(--r4)'} %}
+<section class="grid kpis">
+  {% for rango, monto in cartera.por_rango.items() %}
+  <div class="card kpi">
+    <div class="etq"><span class="leyenda" style="display:inline"><i style="background:{{ colores[rango] }}"></i></span>{{ rango }} días</div>
+    <div class="val">{{ monto | miles }}</div>
+    <div class="det">{{ (monto / cartera.total) | pct if cartera.total else '-' }} del vencido</div>
+  </div>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <header><h2>Por cliente</h2><span class="sub">{{ cartera.clientes | length }} clientes con saldo vencido</span></header>
+  <div class="tabla-wrap"><table>
+    <thead><tr>
+      <th>Cliente</th><th class="num">Rentas</th>
+      {% for rango in cartera.por_rango %}<th class="num ocultar-movil">{{ rango }}</th>{% endfor %}
+      <th class="num">Total</th><th class="num ocultar-movil">Días máx.</th>
+    </tr></thead>
+    <tbody>
+    {% for c in cartera.clientes %}
+      <tr>
+        <td>{{ c.cliente }}{% if c.rescindidos %} <span class="estado rescindido">{{ c.rescindidos | length }} rescindido{{ 's' if c.rescindidos | length > 1 }}</span>{% endif %}
+          <span class="linea2">{{ c.contratos | join(', ') }}</span></td>
+        <td class="num">{{ c.rentas }}</td>
+        {% for rango in cartera.por_rango %}<td class="num ocultar-movil {{ 'muted' if not c[rango] }}">{{ c[rango] | dinero if c[rango] else '-' }}</td>{% endfor %}
+        <td class="num"><b>{{ c.total | dinero }}</b></td>
+        <td class="num ocultar-movil {{ 'neg' if c.dias_max > 90 }}">{{ c.dias_max }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}
