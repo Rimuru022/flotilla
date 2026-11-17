@@ -50,7 +50,12 @@ def main(argv=None):
         print(json.dumps(analitica.resumen(consultas.conexion_lectura()), indent=2, ensure_ascii=False))
     elif a.cmd == "preguntar":
         from flotilla import asistente
-        r = asistente.preguntar(consultas.conexion_lectura(), a.pregunta)
+        try:
+            r = asistente.preguntar(consultas.conexion_lectura(), a.pregunta)
+        except asistente.AsistenteNoDisponible as e:
+            raise SystemExit(str(e))
+        except Exception as e:  # error del proveedor tras los reintentos
+            raise SystemExit(f"El modelo no respondió ({type(e).__name__}). Intenta de nuevo en un momento.")
         for paso in r["pasos"]:
             print(f"  > {paso['herramienta']} {json.dumps(paso['argumentos'], ensure_ascii=False)}"
                   + (f"  [error: {paso['error']}]" if paso["error"] else ""))

@@ -108,3 +108,10 @@ def test_cotizar_por_herramienta_coincide_con_finanzas(conn):
 def test_argumentos_invalidos_dan_error_legible(conn, nombre, args):
     salida = json.loads(herramientas.ejecutar(conn, nombre, args))
     assert "error" in salida
+
+
+def test_la_respuesta_nunca_lleva_raya_larga(conn):
+    m = ModeloFalso(["Las vans —las Urvan sobre todo— rinden más.\n"])
+    r = asistente.preguntar(conn, "x", cliente=m, modelo="x")
+    assert "—" not in r["respuesta"]
+    assert r["respuesta"] == "Las vans -las Urvan sobre todo- rinden más."

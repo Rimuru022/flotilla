@@ -29,6 +29,8 @@ Reglas:
 - La rentabilidad es económica: ingreso devengado + resultado por venta - gastos - depreciación - costo de fondeo.
 - Termina con una recomendación concreta cuando la pregunta lo amerite.
 - No uses tablas de más de 8 filas. No uses el carácter "—".
+- Sin saludo, sin firma y sin emojis. Empieza directo con la respuesta.
+- Si la pregunta pide algo que los datos no contienen (proyecciones, datos de mercado, otra empresa), dilo y ofrece lo más cercano que sí puedes calcular.
 
 Fecha de corte de los datos: {corte}."""
 
@@ -42,8 +44,15 @@ def _cliente():
     if not clave:
         raise AsistenteNoDisponible("El asistente no está configurado (falta OPENROUTER_API_KEY).")
     from openai import OpenAI
-    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=clave, timeout=60,
+    # max_retries: el SDK reintenta 429 y 5xx con espera exponencial (los proveedores baratos lo devuelven seguido).
+    return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=clave, timeout=60, max_retries=4,
                   default_headers={"X-Title": "Flotilla demo"})
+
+
+def _limpiar(texto):
+    """El prompt pide no usar raya larga, pero los modelos a veces la usan igual:
+    se garantiza en código, no en el prompt."""
+    return (texto or "").replace(" — ", " - ").replace("—", "-").strip()
 
 
 def _tools():
@@ -72,7 +81,7 @@ def preguntar(conn, pregunta, historial=None, cliente=None, modelo=None):
         msg = r.choices[0].message
         llamadas = msg.tool_calls or []
         if not llamadas:
-            return {"respuesta": (msg.content or "").strip(), "pasos": pasos, "modelo": modelo,
+            return {"respuesta": _limpiar(msg.content), "pasos": pasos, "modelo": modelo,
                     "segundos": round(time.monotonic() - inicio, 1)}
         mensajes.append({"role": "assistant", "content": msg.content or "",
                          "tool_calls": [{"id": t.id, "type": "function",
