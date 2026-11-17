@@ -197,7 +197,9 @@ tbody tr:hover { background: var(--surface-2); }
 .msg.yo { align-self: flex-end; background: var(--accent); color: #fff; padding: 9px 14px; border-radius: 12px 12px 2px 12px; }
 .msg.ia { align-self: flex-start; }
 .msg.ia .cuerpo { line-height: 1.6; }
-.msg.ia .cuerpo p + p, .msg.ia .cuerpo ul, .msg.ia .cuerpo ol, .msg.ia .cuerpo table { margin-top: 8px; }
+.msg.ia .cuerpo > * + * { margin-top: 10px; }
+.msg.ia .cuerpo hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+.msg.ia .cuerpo td, .msg.ia .cuerpo th { padding: 7px 10px; }
 .msg.ia .cuerpo ul, .msg.ia .cuerpo ol { padding-left: 20px; }
 .msg.ia .cuerpo table { font-size: 13px; }
 .msg.ia .cuerpo h3, .msg.ia .cuerpo h4 { font-size: 14.5px; margin-top: 12px; }
